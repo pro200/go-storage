@@ -13,7 +13,7 @@ go get github.com/pro200/go-storage
 ```go
 import "github.com/pro200/go-storage"
 
-r2, err := storage.NewStorage(r2.Config{
+client, err := storage.NewStorage(r2.Config{
 	Endpoint:       "your-account-id",
     AccessKeyID:     "your-access-key-id",
     SecretAccessKey: "your-secret-access-key",
@@ -30,7 +30,7 @@ if err != nil {
 
 ### 객체 정보 확인
 ```go
-info, err := storage.Info("my-bucket", "path/to/object.txt")
+info, err := client.Info("my-bucket", "path/to/object.txt")
 if err != nil {
     panic(err)
 }
@@ -39,7 +39,7 @@ fmt.Println("Object size:", *info.ContentLength)
 
 ### 객체 목록 조회
 ```go
-files, nextToken, err := storage.List("my-bucket", "prefix/", 100)
+files, nextToken, err := client.List("my-bucket", "prefix/", 100)
 if err != nil {
     panic(err)
 }
@@ -53,7 +53,7 @@ fmt.Println("NextToken:", nextToken)
 
 ### 파일 업로드
 ```go
-err := storage.Upload("my-bucket", "./local.txt", "remote/path.txt")
+err := client.Upload("my-bucket", "./local.txt", "remote/path.txt")
 if err != nil {
     panic(err)
 }
@@ -61,12 +61,12 @@ if err != nil {
 - 기본적으로 파일 확장자를 기반으로 Content-Type을 자동 지정합니다.
 - 강제로 Content-Type을 지정하려면 마지막 인자로 전달하세요:
 ```go
-storage.Upload("my-bucket", "./local.txt", "remote/path.txt", "text/plain")
+client.Upload("my-bucket", "./local.txt", "remote/path.txt", "text/plain")
 ```
 
 ### 파일 다운로드
 ```go
-err := storage.Download("my-bucket", "remote/path.txt", "./downloaded.txt")
+err := client.Download("my-bucket", "remote/path.txt", "./downloaded.txt")
 if err != nil {
     panic(err)
 }
@@ -74,7 +74,7 @@ if err != nil {
 
 ### 객체 삭제
 ```go
-err := storage.Delete("my-bucket", "remote/path.txt")
+err := client.Delete("my-bucket", "remote/path.txt")
 if err != nil {
     panic(err)
 }
