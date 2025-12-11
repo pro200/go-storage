@@ -1,7 +1,7 @@
 # Storage
 Cloudflare R2, Backblaze B2, Bunny Storage를 Go에서 쉽게 다루기 위한 유틸리티 패키지입니다.
 AWS SDK for Go v2를 기반으로 파일 업로드, 다운로드, 삭제, 리스트 조회, 객체 정보 확인 기능을 제공합니다.
-Bunny Storage는 ATTP API사용.
+Bunny Storage는 HTTP API사용.
 
 ## 설치
 ```bash
