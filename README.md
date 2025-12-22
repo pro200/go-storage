@@ -13,7 +13,7 @@ go get github.com/pro200/go-storage
 ```go
 import "github.com/pro200/go-storage"
 
-client, err := storage.NewStorage(r2.Config{
+client, err := storage.NewStorage(storage.Config{
 	Endpoint:       "your-account-id",
     AccessKeyID:     "your-access-key-id",
     SecretAccessKey: "your-secret-access-key",
