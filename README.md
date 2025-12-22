@@ -1,86 +1,223 @@
-# Storage
-Cloudflare R2, Backblaze B2, Bunny Storage를 Go에서 쉽게 다루기 위한 유틸리티 패키지입니다.
-AWS SDK for Go v2를 기반으로 파일 업로드, 다운로드, 삭제, 리스트 조회, 객체 정보 확인 기능을 제공합니다.
-Bunny Storage는 HTTP API사용.
+# Storage Package
+
+S3 호환 스토리지(AWS S3, Cloudflare R2, Backblaze B2 등)를 **단일 인터페이스**로 다루기 위한 Go 패키지입니다.
+
+파일 업로드/다운로드, 객체 조회, 목록 조회, 삭제, Presigned URL 생성 기능을 제공합니다.
+
+---
+
+## 지원 스토리지
+
+이 패키지는 **AWS SDK v2** 기반으로 동작하며, 다음과 같은 S3 호환 스토리지를 지원합니다.
+
+- **AWS S3**
+- **Cloudflare R2**
+- **Backblaze B2 (S3 Compatible API)**
+- 기타 S3 API 호환 스토리지
+
+---
+
+## 주요 기능
+
+- 객체 정보 조회 (`HeadObject`)
+- 객체 목록 조회 (`ListObjectsV2`)
+- 로컬 파일 업로드
+- 원격(URL) 파일 업로드
+- 파일 다운로드
+- 객체 삭제
+- Presigned GET / PUT URL 생성
+
+---
 
 ## 설치
+
 ```bash
 go get github.com/pro200/go-storage
 ```
 
-## 초기화
-먼저 NewStorage() 함수를 통해 R2 클라이언트를 초기화해야 합니다.
-```go
-import "github.com/pro200/go-storage"
+---
 
-client, err := storage.NewStorage(storage.Config{
-	Endpoint:       "your-account-id",
-    AccessKeyID:     "your-access-key-id",
-    SecretAccessKey: "your-secret-access-key",
+## 기본 구조
+
+### Config
+
+```go
+type Config struct {
+    Endpoint        string
+    Region          string // default: auto
+    AccessKeyID     string
+    SecretAccessKey string
+}
+```
+
+| 필드 | 설명 |
+|---|---|
+| Endpoint | S3 호환 엔드포인트 주소 |
+| Region | 리전 (비워두면 auto) |
+| AccessKeyID | 액세스 키 |
+| SecretAccessKey | 시크릿 키 |
+
+#### Endpoint 예시
+
+- Cloudflare R2  
+  `https://<account-id>.r2.cloudflarestorage.com`
+
+- Backblaze B2  
+  `https://s3.<region>.backblazeb2.com`
+
+---
+
+### Options (업로드 옵션)
+
+```go
+type Options struct {
+    Headers     map[string]string
+    ContentType string
+}
+```
+
+| 필드 | 설명 |
+|---|---|
+| Headers | 원격 파일 다운로드 시 사용할 HTTP 헤더 |
+| ContentType | 업로드 시 사용할 Content-Type |
+
+---
+
+## 초기화
+
+```go
+store, err := storage.NewStorage(storage.Config{
+    Endpoint:        "<endpoint>",
+    Region:          "auto",
+    AccessKeyID:     "ACCESS_KEY",
+    SecretAccessKey: "SECRET_KEY",
 })
 if err != nil {
     panic(err)
 }
 ```
-- Endpoint: <account-id>.r2.cloudflarestorage.com, s3.<region>.backblazeb2.com, sg.storage.bunnycdn.com
-- AccessKeyID: R2, B2 액세스 키 
-- SecretAccessKey: R2, B2, Bunny 비밀 키
 
-## 기능
+### 동작 특징
 
-### 객체 정보 확인
+- Endpoint에 `http(s)://`가 없으면 자동으로 `https://`를 추가합니다.
+- Backblaze B2 사용 시 Endpoint에서 Region을 자동 추출합니다.
+- Region이 비어 있으면 기본값은 `auto`입니다.
+
+---
+
+## API 설명
+
+### 객체 정보 조회
+
 ```go
-info, err := client.Info("my-bucket", "path/to/object.txt")
-if err != nil {
-    panic(err)
-}
-fmt.Println("Object size:", *info.ContentLength)
+info, err := store.Info("bucket", "path/file.jpg")
 ```
+
+- 내부적으로 `HeadObject` 호출
+
+---
 
 ### 객체 목록 조회
-```go
-files, nextToken, err := client.List("my-bucket", "prefix/", 100)
-if err != nil {
-    panic(err)
-}
 
-fmt.Println("Files:", files)
-fmt.Println("NextToken:", nextToken)
+```go
+list, nextToken, err := store.List("bucket", "prefix/", 100)
 ```
-- 최대 1,000개의 객체를 조회할 수 있습니다.
-- nextToken을 사용하여 다음 페이지를 조회할 수 있습니다.
-- Bunny Storage는 지원하지 앟음
 
-### 파일 업로드
+| 파라미터 | 설명 |
+|---|---|
+| bucket | 버킷 이름 |
+| prefix | 객체 prefix |
+| length | 최대 반환 개수 (최대 1000) |
+| token | ContinuationToken (옵션) |
+
+- `nextToken`이 비어있지 않으면 다음 페이지 존재
+
+---
+
+### 파일 업로드 (로컬 파일)
+
 ```go
-err := client.Upload("my-bucket", "./local.txt", "remote/path.txt")
-if err != nil {
-    panic(err)
-}
+err := store.Upload("bucket", "path/file.jpg", "/local/file.jpg")
 ```
-- 기본적으로 파일 확장자를 기반으로 Content-Type을 자동 지정합니다.
-- 강제로 Content-Type을 지정하려면 마지막 인자로 전달하세요:
+
+---
+
+### 파일 업로드 (원격 URL)
+
 ```go
-client.Upload("my-bucket", "./local.txt", "remote/path.txt", "text/plain")
+err := store.Upload(
+    "bucket",
+    "path/file.jpg",
+    "https://example.com/file.jpg",
+    storage.Options{
+        Headers: map[string]string{
+            "Authorization": "Bearer token",
+        },
+    },
+)
 ```
+
+#### 업로드 특징
+
+- 로컬 파일 또는 HTTP(S) URL 모두 지원
+- Content-Type 미지정 시 자동 추론
+- 업로드 후 실제 저장된 파일 크기 검증
+- 크기가 0인 파일은 업로드 거부
+
+---
 
 ### 파일 다운로드
+
 ```go
-err := client.Download("my-bucket", "remote/path.txt", "./downloaded.txt")
-if err != nil {
-    panic(err)
-}
+err := store.Download("bucket", "path/file.jpg", "/tmp/file.jpg")
 ```
+
+---
 
 ### 객체 삭제
+
 ```go
-err := client.Delete("my-bucket", "remote/path.txt")
-if err != nil {
-    panic(err)
-}
+err := store.Delete("bucket", "path/file.jpg")
 ```
 
-### 의존성
-- AWS SDK for Go v2
-- Cloudflare R2
-- pro200/go-utils (Content-Type 판별)
+---
+
+### Presigned GET URL 생성
+
+```go
+url, err := store.PresignGet(
+    "bucket",
+    "path/file.jpg",
+    10*time.Minute,
+)
+```
+
+---
+
+### Presigned PUT URL 생성
+
+```go
+url, err := store.PresignPut(
+    "bucket",
+    "path/file.jpg",
+    10*time.Minute,
+)
+```
+
+---
+
+## 주의 사항
+
+- AWS SDK v2 기반이므로 Go 1.18+ 권장
+- Presigned URL TTL은 스토리지 정책에 따라 제한될 수 있음
+- 업로드 검증은 `Content-Length` 기준 비교
+- 업로드 실패 시 객체 자동 삭제는 아직 구현되지 않음 (TODO)
+
+---
+
+## 사용 라이브러리
+
+- `github.com/aws/aws-sdk-go-v2`
+- `github.com/aws/aws-sdk-go-v2/service/s3`
+- `github.com/aws/aws-sdk-go-v2/feature/s3/manager`
+- `github.com/pro200/go-utils`

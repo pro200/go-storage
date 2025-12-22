@@ -1,11 +1,9 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -26,14 +24,12 @@ type Config struct {
 	SecretAccessKey string
 }
 
-type SType string
+type Options struct {
+	Headers     map[string]string
+	ContentType string
+}
 
-const (
-	r2        SType = "r2"
-	backblaze SType = "backblazeb2"
-	bunnyCDN  SType = "bunnycdn"
-	etc       SType = "etc"
-)
+type SType string
 
 type Storage struct {
 	config        Config
@@ -43,7 +39,7 @@ type Storage struct {
 
 func NewStorage(config Config) (*Storage, error) {
 	if config.Endpoint == "" {
-		return nil, errors.New("missing endpoint: <account-id>.r2.cloudflarestorage.com or s3.<region>.backblazeb2.com or storage.bunnycdn.com")
+		return nil, errors.New("missing endpoint: <account-id>.r2.cloudflarestorage.com or s3.<region>.backblazeb2.com")
 	}
 
 	if !strings.HasPrefix(config.Endpoint, "http://") && !strings.HasPrefix(config.Endpoint, "https://") {
@@ -57,13 +53,6 @@ func NewStorage(config Config) (*Storage, error) {
 
 	if config.Region == "" {
 		config.Region = "auto"
-	}
-
-	// bunnycdn은 기본 S3 클라이언트 사용 안함
-	if strings.Contains(config.Endpoint, "bunnycdn") {
-		return &Storage{
-			config: config,
-		}, nil
 	}
 
 	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(),
@@ -85,22 +74,7 @@ func NewStorage(config Config) (*Storage, error) {
 	}, nil
 }
 
-func (s *Storage) Type() SType {
-	if strings.Contains(s.config.Endpoint, "cloudflarestorage") {
-		return r2
-	} else if strings.Contains(s.config.Endpoint, "backblazeb2") {
-		return backblaze
-	} else if strings.Contains(s.config.Endpoint, "bunnycdn") {
-		return bunnyCDN
-	}
-	return etc
-}
-
 func (s *Storage) Info(bucket, key string) (*s3.HeadObjectOutput, error) {
-	if s.Type() == bunnyCDN {
-		return nil, errors.New("bunnycdn storage does not support Info operation")
-	}
-
 	return s.client.HeadObject(context.TODO(), &s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -108,10 +82,6 @@ func (s *Storage) Info(bucket, key string) (*s3.HeadObjectOutput, error) {
 }
 
 func (s *Storage) List(bucket, prefix string, length int, token ...string) (list []string, nextToken string, err error) {
-	if s.Type() == bunnyCDN {
-		return list, nextToken, errors.New("bunnycdn storage does not support List operation")
-	}
-
 	// up to 1,000 keys
 	if length > 1000 {
 		length = 1000
@@ -142,51 +112,68 @@ func (s *Storage) List(bucket, prefix string, length int, token ...string) (list
 	return list, nextToken, nil
 }
 
-func (s *Storage) Upload(bucket, key, path string, forceType ...string) error {
-	file, err := os.ReadFile(path)
-	if err != nil {
-		return err
+func (s *Storage) Upload(bucket, key, origin string, options ...Options) error {
+	var (
+		err      error
+		resp     *http.Response
+		file     *os.File
+		size     int
+		isRemote = strings.HasPrefix(origin, "https://")
+	)
+
+	var opt = new(Options)
+	if len(options) > 0 {
+		opt = &options[0]
 	}
 
-	if len(file) == 0 {
+	if opt.ContentType == "" {
+		opt.ContentType = utils.ContentType(origin)
+	}
+
+	// remote 파일 스트림
+	if isRemote {
+		req, _ := http.NewRequest("GET", origin, nil)
+
+		// set headers
+		for key, value := range opt.Headers {
+			req.Header.Set(key, value)
+		}
+
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		size = int(resp.ContentLength)
+	} else {
+		file, err = os.Open(origin)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		stat, _ := file.Stat()
+		size = int(stat.Size())
+	}
+
+	// 파일 정보 (옵션)
+	if size == 0 {
 		return errors.New("zero size file")
 	}
 
-	contentType := utils.ContentType(path)
-	if len(forceType) > 0 {
-		contentType = forceType[0]
+	putObject := &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		Body:        file,
+		ContentType: aws.String(opt.ContentType),
 	}
 
-	if s.Type() == bunnyCDN {
-		url := fmt.Sprintf("%s/%s/%s", s.config.Endpoint, bucket, key)
-		req, err := http.NewRequest("PUT", url, bytes.NewReader(file))
-		if err != nil {
-			return err
-		}
-
-		req.Header.Set("AccessKey", s.config.SecretAccessKey)
-		req.Header.Set("Content-Type", contentType)
-
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer res.Body.Close()
-
-		if res.StatusCode >= 300 {
-			body, _ := io.ReadAll(res.Body)
-			return fmt.Errorf("upload failed: %s", string(body))
-		}
-		return nil
+	// remote url
+	if isRemote {
+		putObject.Body = resp.Body
 	}
 
 	uploader := manager.NewUploader(s.client)
-	_, err = uploader.Upload(context.TODO(), &s3.PutObjectInput{
-		Bucket:      aws.String(bucket),
-		Key:         aws.String(key),
-		Body:        bytes.NewReader(file),
-		ContentType: aws.String(contentType),
-	})
+	_, err = uploader.Upload(context.TODO(), putObject)
 	if err != nil {
 		return err
 	}
@@ -201,7 +188,7 @@ func (s *Storage) Upload(bucket, key, path string, forceType ...string) error {
 	}
 
 	// TODO: 업로드 실패한 파일을 삭제
-	if len(file) != int(*result.ContentLength) {
+	if size != int(*result.ContentLength) {
 		return errors.New("upload failed")
 	}
 
@@ -209,24 +196,6 @@ func (s *Storage) Upload(bucket, key, path string, forceType ...string) error {
 }
 
 func (s *Storage) Delete(bucket, key string) error {
-	if s.Type() == bunnyCDN {
-		url := fmt.Sprintf("%s/%s/%s", s.config.Endpoint, bucket, key)
-		req, _ := http.NewRequest("DELETE", url, nil)
-		req.Header.Set("AccessKey", s.config.SecretAccessKey)
-
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer res.Body.Close()
-
-		if res.StatusCode >= 300 {
-			body, _ := io.ReadAll(res.Body)
-			return fmt.Errorf("delete failed: %s", string(body))
-		}
-		return nil
-	}
-
 	_, err := s.client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -236,39 +205,6 @@ func (s *Storage) Delete(bucket, key string) error {
 }
 
 func (s *Storage) Download(bucket, key, targetPath string) error {
-	if s.Type() == bunnyCDN {
-		url := fmt.Sprintf("%s/%s/%s", s.config.Endpoint, bucket, key)
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return err
-		}
-
-		req.Header.Set("AccessKey", s.config.SecretAccessKey)
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer res.Body.Close()
-
-		if res.StatusCode != http.StatusOK {
-			return fmt.Errorf("download failed, status: %d", res.StatusCode)
-		}
-
-		out, err := os.Create(targetPath)
-		if err != nil {
-			return fmt.Errorf("cannot create file: %w", err)
-		}
-		defer out.Close()
-
-		// Download (stream copy)
-		_, err = io.Copy(out, res.Body)
-		if err != nil {
-			return fmt.Errorf("failed to write file: %w", err)
-		}
-
-		return nil
-	}
-
 	fd, err := os.Create(targetPath)
 	if err != nil {
 		return fmt.Errorf("cannot create file: %w", err)
@@ -285,10 +221,6 @@ func (s *Storage) Download(bucket, key, targetPath string) error {
 }
 
 func (s *Storage) PresignGet(bucket, key string, ttl time.Duration) (string, error) {
-	if s.Type() == bunnyCDN {
-		return "", errors.New("bunnycdn storage does not support Presign operation")
-	}
-
 	res, err := s.presignClient.PresignGetObject(context.Background(), &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -300,10 +232,6 @@ func (s *Storage) PresignGet(bucket, key string, ttl time.Duration) (string, err
 }
 
 func (s *Storage) PresignPut(bucket, key string, ttl time.Duration) (string, error) {
-	if s.Type() == bunnyCDN {
-		return "", errors.New("bunnycdn storage does not support Presign operation")
-	}
-
 	res, err := s.presignClient.PresignPutObject(context.Background(), &s3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),

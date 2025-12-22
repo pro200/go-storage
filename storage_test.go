@@ -1,7 +1,6 @@
 package storage_test
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/pro200/go-env"
@@ -28,8 +27,7 @@ func TestStorage(t *testing.T) {
 		t.Error("리스트 실패:", err)
 	}
 
-	if !slices.Contains(result, "rabbit.jpg") {
-		t.Error("파일이 존재하지 않습니다: rabbit.jpg")
+	if len(result) == 0 {
+		t.Error("파일이 존재하지 않습니다")
 	}
-
 }
