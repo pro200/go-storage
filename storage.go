@@ -142,7 +142,7 @@ func (s *Storage) List(bucket, prefix string, length int, token ...string) (list
 	return list, nextToken, nil
 }
 
-func (s *Storage) Upload(bucket, path, key string, forceType ...string) error {
+func (s *Storage) Upload(bucket, key, path string, forceType ...string) error {
 	file, err := os.ReadFile(path)
 	if err != nil {
 		return err
