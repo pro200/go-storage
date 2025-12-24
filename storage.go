@@ -126,10 +126,6 @@ func (s *Storage) Upload(bucket, key, origin string, options ...Options) error {
 		opt = &options[0]
 	}
 
-	if opt.ContentType == "" {
-		opt.ContentType = utils.ContentType(origin)
-	}
-
 	// remote 파일 스트림
 	if isRemote {
 		req, _ := http.NewRequest("GET", origin, nil)
@@ -150,6 +146,11 @@ func (s *Storage) Upload(bucket, key, origin string, options ...Options) error {
 			return fmt.Errorf("origin download failed: %s", resp.Status)
 		}
 
+		// get content type from response if not set
+		if opt.ContentType == "" {
+			opt.ContentType = resp.Header.Get("Content-Type")
+		}
+
 		size = int(resp.ContentLength)
 	} else {
 		file, err = os.Open(origin)
@@ -161,7 +162,11 @@ func (s *Storage) Upload(bucket, key, origin string, options ...Options) error {
 		size = int(stat.Size())
 	}
 
-	// 파일 정보 (옵션)
+	// content type from file extension if not set
+	if opt.ContentType == "" {
+		opt.ContentType = utils.ContentType(origin)
+	}
+
 	if size == 0 {
 		return errors.New("zero size file")
 	}
