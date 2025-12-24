@@ -144,6 +144,12 @@ func (s *Storage) Upload(bucket, key, origin string, options ...Options) error {
 			return err
 		}
 		defer resp.Body.Close()
+
+		// befor using resp.Body, check resp.StatusCode
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("origin download failed: %s", resp.Status)
+		}
+
 		size = int(resp.ContentLength)
 	} else {
 		file, err = os.Open(origin)
