@@ -13,7 +13,7 @@ func TestStorage(t *testing.T) {
 		t.Error(err)
 	}
 
-	b2, err := storage.NewStorage(storage.Config{
+	b2, err := storage.New(storage.Config{
 		Endpoint:        config.Get("ENDPOINT"),
 		AccessKeyID:     config.Get("ACCESS_KEY_ID"),
 		SecretAccessKey: config.Get("SECRET_ACCESS_KEY"),

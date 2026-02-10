@@ -37,7 +37,7 @@ type Storage struct {
 	presignClient *s3.PresignClient
 }
 
-func NewStorage(config Config) (*Storage, error) {
+func New(config Config) (*Storage, error) {
 	if config.Endpoint == "" {
 		return nil, errors.New("missing endpoint: <account-id>.r2.cloudflarestorage.com or s3.<region>.backblazeb2.com")
 	}
