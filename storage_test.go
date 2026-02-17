@@ -3,20 +3,20 @@ package storage_test
 import (
 	"testing"
 
-	"github.com/pro200/go-env"
+	"github.com/pro200/go-config"
 	"github.com/pro200/go-storage"
 )
 
 func TestStorage(t *testing.T) {
-	config, err := env.NewEnv()
+	cfg, err := config.New()
 	if err != nil {
 		t.Error(err)
 	}
 
 	b2, err := storage.New(storage.Config{
-		Endpoint:        config.Get("ENDPOINT"),
-		AccessKeyID:     config.Get("ACCESS_KEY_ID"),
-		SecretAccessKey: config.Get("SECRET_ACCESS_KEY"),
+		Endpoint:        cfg.Get("ENDPOINT"),
+		AccessKeyID:     cfg.Get("ACCESS_KEY_ID"),
+		SecretAccessKey: cfg.Get("SECRET_ACCESS_KEY"),
 	})
 	if err != nil {
 		t.Error("연결 실패:", err)

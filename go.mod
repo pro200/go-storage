@@ -28,5 +28,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.4 // indirect
 	github.com/aws/smithy-go v1.23.0 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/pro200/go-config v1.0.1 // indirect
 	github.com/soellman/pidfile v0.0.0-20160225184504-d482c905736b // indirect
 )
