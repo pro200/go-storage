@@ -8,7 +8,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.12
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.19.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.1
-	github.com/pro200/go-env v1.1.3
 	github.com/pro200/go-utils v1.0.0
 )
 
